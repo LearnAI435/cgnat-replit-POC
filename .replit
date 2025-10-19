@@ -11,15 +11,24 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "CGNAT"
+args = "CGNAT Web Dashboard"
 
 [[workflows.workflow]]
-name = "CGNAT"
+name = "CGNAT Web Dashboard"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "./cgnat"
+args = "./web_server"
+waitForPort = 5000
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 43073
+externalPort = 3000

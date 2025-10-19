@@ -5,6 +5,7 @@
 *.out
 cgnat
 stress_test
+web_server
 
 # Debug files
 *.dSYM/

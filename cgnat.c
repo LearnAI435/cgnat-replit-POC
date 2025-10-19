@@ -35,6 +35,12 @@ cgnat_t* cgnat_init(void) {
         return NULL;
     }
     
+    if (pthread_mutex_init(&cgnat->lock, NULL) != 0) {
+        fprintf(stderr, "Failed to initialize mutex\n");
+        free(cgnat);
+        return NULL;
+    }
+    
     cgnat->num_public_ips = 0;
     cgnat->nat_entries_count = 0;
     cgnat->next_free_entry = 0;
@@ -69,6 +75,7 @@ cgnat_t* cgnat_init(void) {
 
 void cgnat_destroy(cgnat_t *cgnat) {
     if (!cgnat) return;
+    pthread_mutex_destroy(&cgnat->lock);
     free(cgnat);
     printf("[CGNAT] Destroyed and cleaned up\n");
 }
@@ -247,7 +254,10 @@ static void update_tcp_state(nat_entry_t *entry, packet_info_t *pkt) {
 }
 
 int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
+    pthread_mutex_lock(&cgnat->lock);
+    
     if (cgnat->num_public_ips == 0) {
+        pthread_mutex_unlock(&cgnat->lock);
         fprintf(stderr, "[CGNAT] No public IPs configured\n");
         return -1;
     }
@@ -264,11 +274,13 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
         pkt->src_ip = entry->pub_ip;
         pkt->src_port = entry->pub_port;
         cgnat->stats_packets_translated++;
+        pthread_mutex_unlock(&cgnat->lock);
         return 0;
     }
     
     entry = allocate_nat_entry(cgnat);
     if (!entry) {
+        pthread_mutex_unlock(&cgnat->lock);
         return -1;
     }
     
@@ -279,6 +291,7 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
     if (allocate_port(cgnat, &entry->pub_ip, &entry->pub_port) != 0) {
         entry->in_use = 0;
         cgnat->nat_entries_count--;
+        pthread_mutex_unlock(&cgnat->lock);
         return -1;
     }
     
@@ -295,13 +308,17 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
     cgnat->stats_active_connections++;
     cgnat->stats_packets_translated++;
     
+    pthread_mutex_unlock(&cgnat->lock);
     return 0;
 }
 
 int cgnat_translate_inbound(cgnat_t *cgnat, packet_info_t *pkt) {
+    pthread_mutex_lock(&cgnat->lock);
+    
     nat_entry_t *entry = find_inbound_entry(cgnat, pkt->dst_ip, pkt->dst_port, pkt->protocol);
     
     if (!entry) {
+        pthread_mutex_unlock(&cgnat->lock);
         return -1;
     }
     
@@ -315,10 +332,13 @@ int cgnat_translate_inbound(cgnat_t *cgnat, packet_info_t *pkt) {
     pkt->dst_port = entry->priv_port;
     cgnat->stats_packets_translated++;
     
+    pthread_mutex_unlock(&cgnat->lock);
     return 0;
 }
 
 void cgnat_cleanup_expired(cgnat_t *cgnat) {
+    pthread_mutex_lock(&cgnat->lock);
+    
     time_t now = time(NULL);
     int cleaned = 0;
     
@@ -340,12 +360,16 @@ void cgnat_cleanup_expired(cgnat_t *cgnat) {
         }
     }
     
+    pthread_mutex_unlock(&cgnat->lock);
+    
     if (cleaned > 0) {
         printf("[CGNAT] Cleaned up %d expired connections\n", cleaned);
     }
 }
 
 void cgnat_print_stats(cgnat_t *cgnat) {
+    pthread_mutex_lock(&cgnat->lock);
+    
     printf("\n========== CGNAT Statistics ==========\n");
     printf("Public IPs configured: %d\n", cgnat->num_public_ips);
     printf("Total ports available: %d\n", cgnat->num_public_ips * TOTAL_PORTS_PER_IP);
@@ -370,4 +394,6 @@ void cgnat_print_stats(cgnat_t *cgnat) {
         printf("Port pool utilization: %.2f%%\n", utilization);
     }
     printf("======================================\n\n");
+    
+    pthread_mutex_unlock(&cgnat->lock);
 }

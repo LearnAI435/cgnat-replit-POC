@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <netinet/in.h>
 #include <time.h>
+#include <pthread.h>
 
 #define MAX_PUBLIC_IPS 10
 #define MAX_CUSTOMERS 20000
@@ -73,6 +74,8 @@ typedef struct {
     uint64_t stats_active_connections;
     uint64_t stats_port_exhaustion_events;
     uint64_t stats_packets_translated;
+    
+    pthread_mutex_t lock;
 } cgnat_t;
 
 typedef struct {

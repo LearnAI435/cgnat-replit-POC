@@ -10,6 +10,9 @@ A Carrier-Grade NAT (CGNAT) system implemented in C for managing 20,000 customer
 - **2025-10-19**: Implemented TCP/UDP state transition tracking
 - **2025-10-19**: Fixed dual-linkage hash table (separate next_outbound/next_inbound pointers)
 - **2025-10-19**: Successfully stress tested with 20K connections (5.4M conn/sec, 5.6M pkt/sec)
+- **2025-10-19**: Added web-based monitoring dashboard with real-time statistics
+- **2025-10-19**: Implemented HTTP API server with JSON endpoints
+- **2025-10-19**: Added thread safety with pthread mutexes for concurrent access
 
 ## Project Architecture
 
@@ -46,18 +49,26 @@ A Carrier-Grade NAT (CGNAT) system implemented in C for managing 20,000 customer
 - **Dual Linkage**: Each NAT entry maintains two separate hash chain pointers
 - **Port Allocation**: Rotating cursor avoids full scans even under high utilization
 - **State Management**: Proper TCP/UDP state transitions for connection lifecycle
+- **Thread Safety**: pthread_mutex_t protects all CGNAT state access for concurrent operations
+- **Web Architecture**: Lightweight HTTP server with JSON APIs and background traffic simulator
 
 ## Build & Run
 
 ### Build
 ```bash
-make              # Build both main program and stress test
+make              # Build all targets (cgnat, stress_test, web_server)
 make clean        # Clean build artifacts
 ```
 
 ### Run Main Program
 ```bash
-./cgnat           # Interactive demo with simulations
+./cgnat           # Interactive CLI demo with simulations
+```
+
+### Run Web Dashboard
+```bash
+make web          # Build and run web dashboard
+./web_server      # Run directly (serves on port 5000)
 ```
 
 ### Run Stress Test
@@ -96,20 +107,29 @@ make stress       # Build and run stress test
 ## Files
 
 - `cgnat.h` - Header file with data structures and function declarations
-- `cgnat.c` - Core CGNAT implementation (hash tables, NAT translation, port management)
-- `main.c` - Interactive demo program with traffic simulations
+- `cgnat.c` - Core CGNAT implementation (hash tables, NAT translation, port management, thread-safe)
+- `main.c` - Interactive CLI demo program with traffic simulations
+- `web_server.c` - HTTP API server with real-time monitoring endpoints and background traffic simulator
+- `dashboard.html` - Responsive web UI with live charts, metrics, and connection tables
 - `stress_test.c` - Performance validation tool for 20K connections
 - `Makefile` - Build system
 - `README.md` - Detailed documentation
 
 ## Interactive Commands
 
-When running `./cgnat`:
+### CLI Mode (`./cgnat`):
 - `stats` - Display system statistics
 - `sim` - Simulate customer traffic
 - `pool` - Demonstrate port pooling (100 concurrent connections)
 - `cleanup` - Clean expired connections
 - `quit` - Exit program
+
+### Web Dashboard (`./web_server`):
+- Runs on port 5000 with automatic traffic simulation
+- Dashboard at `/` - Real-time monitoring UI
+- API at `/api/stats` - JSON statistics endpoint
+- API at `/api/connections` - JSON active connections list
+- Auto-refreshes every 2 seconds
 
 ## User Preferences
 
