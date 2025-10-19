@@ -1,0 +1,20 @@
+# C build artifacts
+*.o
+*.a
+*.so
+*.out
+cgnat
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Editor files
+*.swp
+*~
+.DS_Store
+
+# Build directory
+build/
