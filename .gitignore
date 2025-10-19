@@ -4,6 +4,7 @@
 *.so
 *.out
 cgnat
+stress_test
 
 # Debug files
 *.dSYM/
@@ -18,3 +19,6 @@ cgnat
 
 # Build directory
 build/
+
+# Logs
+*.log
