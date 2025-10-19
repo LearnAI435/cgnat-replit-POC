@@ -11,6 +11,7 @@
 #define PORT_RANGE_END 65535
 #define TOTAL_PORTS_PER_IP (PORT_RANGE_END - PORT_RANGE_START + 1)
 #define MAX_NAT_ENTRIES 50000
+#define HASH_TABLE_SIZE 65536
 
 #define TCP_TIMEOUT 300
 #define UDP_TIMEOUT 60
@@ -21,10 +22,14 @@ typedef enum {
 } protocol_t;
 
 typedef enum {
-    STATE_NEW = 0,
+    STATE_CLOSED = 0,
+    STATE_SYN_SENT,
+    STATE_SYN_RECEIVED,
     STATE_ESTABLISHED,
+    STATE_FIN_WAIT,
     STATE_CLOSING,
-    STATE_CLOSED
+    STATE_TIME_WAIT,
+    STATE_UDP_ACTIVE
 } conn_state_t;
 
 typedef struct nat_entry {
@@ -36,7 +41,7 @@ typedef struct nat_entry {
     conn_state_t state;
     time_t last_activity;
     uint8_t in_use;
-    struct nat_entry *next;
+    struct nat_entry *next_in_bucket;
 } nat_entry_t;
 
 typedef struct {
@@ -46,13 +51,22 @@ typedef struct {
 } port_entry_t;
 
 typedef struct {
+    nat_entry_t *head;
+} hash_bucket_t;
+
+typedef struct {
     uint32_t public_ips[MAX_PUBLIC_IPS];
     int num_public_ips;
     
     port_entry_t port_pool[MAX_PUBLIC_IPS][TOTAL_PORTS_PER_IP];
+    int next_port_index[MAX_PUBLIC_IPS];
     
     nat_entry_t nat_table[MAX_NAT_ENTRIES];
     int nat_entries_count;
+    int next_free_entry;
+    
+    hash_bucket_t outbound_hash[HASH_TABLE_SIZE];
+    hash_bucket_t inbound_hash[HASH_TABLE_SIZE];
     
     uint64_t stats_total_connections;
     uint64_t stats_active_connections;
