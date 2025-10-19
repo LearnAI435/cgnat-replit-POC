@@ -41,7 +41,8 @@ cgnat_t* cgnat_init(void) {
     
     for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
         cgnat->nat_table[i].in_use = 0;
-        cgnat->nat_table[i].next_in_bucket = NULL;
+        cgnat->nat_table[i].next_outbound = NULL;
+        cgnat->nat_table[i].next_inbound = NULL;
     }
     
     for (int i = 0; i < HASH_TABLE_SIZE; i++) {
@@ -147,7 +148,7 @@ static nat_entry_t* find_outbound_entry(cgnat_t *cgnat, uint32_t priv_ip, uint16
             entry->protocol == protocol) {
             return entry;
         }
-        entry = entry->next_in_bucket;
+        entry = entry->next_outbound;
     }
     return NULL;
 }
@@ -163,7 +164,7 @@ static nat_entry_t* find_inbound_entry(cgnat_t *cgnat, uint32_t pub_ip, uint16_t
             entry->protocol == protocol) {
             return entry;
         }
-        entry = entry->next_in_bucket;
+        entry = entry->next_inbound;
     }
     return NULL;
 }
@@ -173,7 +174,8 @@ static nat_entry_t* allocate_nat_entry(cgnat_t *cgnat) {
         int idx = (cgnat->next_free_entry + i) % MAX_NAT_ENTRIES;
         if (!cgnat->nat_table[idx].in_use) {
             cgnat->nat_table[idx].in_use = 1;
-            cgnat->nat_table[idx].next_in_bucket = NULL;
+            cgnat->nat_table[idx].next_outbound = NULL;
+            cgnat->nat_table[idx].next_inbound = NULL;
             cgnat->nat_entries_count++;
             cgnat->next_free_entry = (idx + 1) % MAX_NAT_ENTRIES;
             return &cgnat->nat_table[idx];
@@ -185,25 +187,14 @@ static nat_entry_t* allocate_nat_entry(cgnat_t *cgnat) {
 
 static void add_to_hash_tables(cgnat_t *cgnat, nat_entry_t *entry) {
     uint32_t out_hash = hash_outbound(entry->priv_ip, entry->priv_port, entry->protocol);
-    entry->next_in_bucket = cgnat->outbound_hash[out_hash].head;
+    entry->next_outbound = cgnat->outbound_hash[out_hash].head;
     cgnat->outbound_hash[out_hash].head = entry;
 }
 
 static void add_to_inbound_hash(cgnat_t *cgnat, nat_entry_t *entry) {
     uint32_t in_hash = hash_inbound(entry->pub_ip, entry->pub_port, entry->protocol);
-    
-    nat_entry_t *prev = NULL;
-    nat_entry_t *curr = cgnat->inbound_hash[in_hash].head;
-    while (curr) {
-        prev = curr;
-        curr = curr->next_in_bucket;
-    }
-    
-    if (prev) {
-        prev->next_in_bucket = entry;
-    } else {
-        cgnat->inbound_hash[in_hash].head = entry;
-    }
+    entry->next_inbound = cgnat->inbound_hash[in_hash].head;
+    cgnat->inbound_hash[in_hash].head = entry;
 }
 
 static void remove_from_hash_tables(cgnat_t *cgnat, nat_entry_t *entry) {
@@ -211,20 +202,20 @@ static void remove_from_hash_tables(cgnat_t *cgnat, nat_entry_t *entry) {
     nat_entry_t **curr = &cgnat->outbound_hash[out_hash].head;
     while (*curr) {
         if (*curr == entry) {
-            *curr = entry->next_in_bucket;
+            *curr = entry->next_outbound;
             break;
         }
-        curr = &((*curr)->next_in_bucket);
+        curr = &((*curr)->next_outbound);
     }
     
     uint32_t in_hash = hash_inbound(entry->pub_ip, entry->pub_port, entry->protocol);
     curr = &cgnat->inbound_hash[in_hash].head;
     while (*curr) {
         if (*curr == entry) {
-            *curr = entry->next_in_bucket;
+            *curr = entry->next_inbound;
             break;
         }
-        curr = &((*curr)->next_in_bucket);
+        curr = &((*curr)->next_inbound);
     }
 }
 

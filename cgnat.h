@@ -41,7 +41,8 @@ typedef struct nat_entry {
     conn_state_t state;
     time_t last_activity;
     uint8_t in_use;
-    struct nat_entry *next_in_bucket;
+    struct nat_entry *next_outbound;
+    struct nat_entry *next_inbound;
 } nat_entry_t;
 
 typedef struct {
