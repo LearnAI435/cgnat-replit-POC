@@ -4,13 +4,13 @@
 #include <stdint.h>
 #include <netinet/in.h>
 #include <time.h>
-#include "uthash.h"
 
 #define MAX_PUBLIC_IPS 10
 #define MAX_CUSTOMERS 20000
 #define PORT_RANGE_START 1024
 #define PORT_RANGE_END 65535
 #define TOTAL_PORTS_PER_IP (PORT_RANGE_END - PORT_RANGE_START + 1)
+#define MAX_NAT_ENTRIES 50000
 
 #define TCP_TIMEOUT 300
 #define UDP_TIMEOUT 60
@@ -27,7 +27,7 @@ typedef enum {
     STATE_CLOSED
 } conn_state_t;
 
-typedef struct {
+typedef struct nat_entry {
     uint32_t priv_ip;
     uint16_t priv_port;
     uint32_t pub_ip;
@@ -35,19 +35,9 @@ typedef struct {
     uint8_t protocol;
     conn_state_t state;
     time_t last_activity;
-    UT_hash_handle hh_out;
-} nat_entry_outbound_t;
-
-typedef struct {
-    uint32_t pub_ip;
-    uint16_t pub_port;
-    uint32_t priv_ip;
-    uint16_t priv_port;
-    uint8_t protocol;
-    conn_state_t state;
-    time_t last_activity;
-    UT_hash_handle hh_in;
-} nat_entry_inbound_t;
+    uint8_t in_use;
+    struct nat_entry *next;
+} nat_entry_t;
 
 typedef struct {
     uint32_t pub_ip;
@@ -61,8 +51,8 @@ typedef struct {
     
     port_entry_t port_pool[MAX_PUBLIC_IPS][TOTAL_PORTS_PER_IP];
     
-    nat_entry_outbound_t *outbound_table;
-    nat_entry_inbound_t *inbound_table;
+    nat_entry_t nat_table[MAX_NAT_ENTRIES];
+    int nat_entries_count;
     
     uint64_t stats_total_connections;
     uint64_t stats_active_connections;
@@ -89,8 +79,5 @@ int cgnat_translate_inbound(cgnat_t *cgnat, packet_info_t *pkt);
 
 void cgnat_cleanup_expired(cgnat_t *cgnat);
 void cgnat_print_stats(cgnat_t *cgnat);
-
-uint64_t make_outbound_key(uint32_t priv_ip, uint16_t priv_port, uint8_t protocol);
-uint64_t make_inbound_key(uint32_t pub_ip, uint16_t pub_port, uint8_t protocol);
 
 #endif

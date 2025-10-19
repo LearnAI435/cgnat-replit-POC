@@ -11,9 +11,12 @@ cgnat_t* cgnat_init(void) {
         return NULL;
     }
     
-    cgnat->outbound_table = NULL;
-    cgnat->inbound_table = NULL;
     cgnat->num_public_ips = 0;
+    cgnat->nat_entries_count = 0;
+    
+    for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+        cgnat->nat_table[i].in_use = 0;
+    }
     
     for (int i = 0; i < MAX_PUBLIC_IPS; i++) {
         for (int j = 0; j < TOTAL_PORTS_PER_IP; j++) {
@@ -33,19 +36,6 @@ cgnat_t* cgnat_init(void) {
 
 void cgnat_destroy(cgnat_t *cgnat) {
     if (!cgnat) return;
-    
-    nat_entry_outbound_t *out_curr, *out_tmp;
-    HASH_ITER(hh_out, cgnat->outbound_table, out_curr, out_tmp) {
-        HASH_DELETE(hh_out, cgnat->outbound_table, out_curr);
-        free(out_curr);
-    }
-    
-    nat_entry_inbound_t *in_curr, *in_tmp;
-    HASH_ITER(hh_in, cgnat->inbound_table, in_curr, in_tmp) {
-        HASH_DELETE(hh_in, cgnat->inbound_table, in_curr);
-        free(in_tmp);
-    }
-    
     free(cgnat);
     printf("[CGNAT] Destroyed and cleaned up\n");
 }
@@ -108,12 +98,40 @@ static void release_port(cgnat_t *cgnat, uint32_t pub_ip, uint16_t pub_port) {
     }
 }
 
-uint64_t make_outbound_key(uint32_t priv_ip, uint16_t priv_port, uint8_t protocol) {
-    return ((uint64_t)priv_ip << 24) | ((uint64_t)priv_port << 8) | protocol;
+static nat_entry_t* find_outbound_entry(cgnat_t *cgnat, uint32_t priv_ip, uint16_t priv_port, uint8_t protocol) {
+    for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+        if (cgnat->nat_table[i].in_use &&
+            cgnat->nat_table[i].priv_ip == priv_ip &&
+            cgnat->nat_table[i].priv_port == priv_port &&
+            cgnat->nat_table[i].protocol == protocol) {
+            return &cgnat->nat_table[i];
+        }
+    }
+    return NULL;
 }
 
-uint64_t make_inbound_key(uint32_t pub_ip, uint16_t pub_port, uint8_t protocol) {
-    return ((uint64_t)pub_ip << 24) | ((uint64_t)pub_port << 8) | protocol;
+static nat_entry_t* find_inbound_entry(cgnat_t *cgnat, uint32_t pub_ip, uint16_t pub_port, uint8_t protocol) {
+    for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+        if (cgnat->nat_table[i].in_use &&
+            cgnat->nat_table[i].pub_ip == pub_ip &&
+            cgnat->nat_table[i].pub_port == pub_port &&
+            cgnat->nat_table[i].protocol == protocol) {
+            return &cgnat->nat_table[i];
+        }
+    }
+    return NULL;
+}
+
+static nat_entry_t* allocate_nat_entry(cgnat_t *cgnat) {
+    for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+        if (!cgnat->nat_table[i].in_use) {
+            cgnat->nat_table[i].in_use = 1;
+            cgnat->nat_entries_count++;
+            return &cgnat->nat_table[i];
+        }
+    }
+    fprintf(stderr, "[CGNAT] NAT table full! Cannot create new entry.\n");
+    return NULL;
 }
 
 int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
@@ -122,10 +140,7 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
         return -1;
     }
     
-    uint64_t key = make_outbound_key(pkt->src_ip, pkt->src_port, pkt->protocol);
-    nat_entry_outbound_t *entry = NULL;
-    
-    HASH_FIND(hh_out, cgnat->outbound_table, &key, sizeof(key), entry);
+    nat_entry_t *entry = find_outbound_entry(cgnat, pkt->src_ip, pkt->src_port, pkt->protocol);
     
     if (entry) {
         entry->last_activity = time(NULL);
@@ -135,9 +150,8 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
         return 0;
     }
     
-    entry = (nat_entry_outbound_t*)malloc(sizeof(nat_entry_outbound_t));
+    entry = allocate_nat_entry(cgnat);
     if (!entry) {
-        fprintf(stderr, "[CGNAT] Memory allocation failed\n");
         return -1;
     }
     
@@ -146,34 +160,13 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
     entry->protocol = pkt->protocol;
     
     if (allocate_port(cgnat, &entry->pub_ip, &entry->pub_port) != 0) {
-        free(entry);
+        entry->in_use = 0;
+        cgnat->nat_entries_count--;
         return -1;
     }
     
     entry->state = STATE_NEW;
     entry->last_activity = time(NULL);
-    
-    HASH_ADD(hh_out, cgnat->outbound_table, priv_ip, sizeof(key), entry);
-    
-    nat_entry_inbound_t *in_entry = (nat_entry_inbound_t*)malloc(sizeof(nat_entry_inbound_t));
-    if (!in_entry) {
-        fprintf(stderr, "[CGNAT] Memory allocation failed for inbound entry\n");
-        release_port(cgnat, entry->pub_ip, entry->pub_port);
-        HASH_DELETE(hh_out, cgnat->outbound_table, entry);
-        free(entry);
-        return -1;
-    }
-    
-    in_entry->pub_ip = entry->pub_ip;
-    in_entry->pub_port = entry->pub_port;
-    in_entry->priv_ip = entry->priv_ip;
-    in_entry->priv_port = entry->priv_port;
-    in_entry->protocol = entry->protocol;
-    in_entry->state = STATE_NEW;
-    in_entry->last_activity = time(NULL);
-    
-    uint64_t in_key = make_inbound_key(in_entry->pub_ip, in_entry->pub_port, in_entry->protocol);
-    HASH_ADD(hh_in, cgnat->inbound_table, pub_ip, sizeof(in_key), in_entry);
     
     pkt->src_ip = entry->pub_ip;
     pkt->src_port = entry->pub_port;
@@ -186,10 +179,7 @@ int cgnat_translate_outbound(cgnat_t *cgnat, packet_info_t *pkt) {
 }
 
 int cgnat_translate_inbound(cgnat_t *cgnat, packet_info_t *pkt) {
-    uint64_t key = make_inbound_key(pkt->dst_ip, pkt->dst_port, pkt->protocol);
-    nat_entry_inbound_t *entry = NULL;
-    
-    HASH_FIND(hh_in, cgnat->inbound_table, &key, sizeof(key), entry);
+    nat_entry_t *entry = find_inbound_entry(cgnat, pkt->dst_ip, pkt->dst_port, pkt->protocol);
     
     if (!entry) {
         return -1;
@@ -207,26 +197,17 @@ void cgnat_cleanup_expired(cgnat_t *cgnat) {
     time_t now = time(NULL);
     int cleaned = 0;
     
-    nat_entry_outbound_t *out_curr, *out_tmp;
-    HASH_ITER(hh_out, cgnat->outbound_table, out_curr, out_tmp) {
-        int timeout = (out_curr->protocol == PROTO_TCP) ? TCP_TIMEOUT : UDP_TIMEOUT;
-        
-        if (now - out_curr->last_activity > timeout) {
-            release_port(cgnat, out_curr->pub_ip, out_curr->pub_port);
+    for (int i = 0; i < MAX_NAT_ENTRIES; i++) {
+        if (cgnat->nat_table[i].in_use) {
+            int timeout = (cgnat->nat_table[i].protocol == PROTO_TCP) ? TCP_TIMEOUT : UDP_TIMEOUT;
             
-            uint64_t in_key = make_inbound_key(out_curr->pub_ip, out_curr->pub_port, out_curr->protocol);
-            nat_entry_inbound_t *in_entry = NULL;
-            HASH_FIND(hh_in, cgnat->inbound_table, &in_key, sizeof(in_key), in_entry);
-            if (in_entry) {
-                HASH_DELETE(hh_in, cgnat->inbound_table, in_entry);
-                free(in_entry);
+            if (now - cgnat->nat_table[i].last_activity > timeout) {
+                release_port(cgnat, cgnat->nat_table[i].pub_ip, cgnat->nat_table[i].pub_port);
+                cgnat->nat_table[i].in_use = 0;
+                cgnat->nat_entries_count--;
+                cgnat->stats_active_connections--;
+                cleaned++;
             }
-            
-            HASH_DELETE(hh_out, cgnat->outbound_table, out_curr);
-            free(out_curr);
-            
-            cgnat->stats_active_connections--;
-            cleaned++;
         }
     }
     
@@ -253,6 +234,7 @@ void cgnat_print_stats(cgnat_t *cgnat) {
         }
     }
     printf("Ports currently in use: %d\n", ports_in_use);
+    printf("NAT table entries: %d / %d\n", cgnat->nat_entries_count, MAX_NAT_ENTRIES);
     
     if (cgnat->num_public_ips > 0) {
         double utilization = (double)ports_in_use / (cgnat->num_public_ips * TOTAL_PORTS_PER_IP) * 100.0;

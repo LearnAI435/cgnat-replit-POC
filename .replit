@@ -1,2 +1,25 @@
 [agent]
 expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "CGNAT"
+
+[[workflows.workflow]]
+name = "CGNAT"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./cgnat"
+
+[workflows.workflow.metadata]
+outputType = "console"

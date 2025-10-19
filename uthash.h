@@ -54,7 +54,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define HASH_FIND_BYHASHVALUE(hh,head,findkey,keylen,hashval,out) do { \
   out = NULL; \
   if (head) { \
-    typeof(head) _hf_tmp; \
+    __typeof__(head) _hf_tmp; \
     for (_hf_tmp = (head); _hf_tmp; _hf_tmp = _hf_tmp->hh.next) { \
       if ((_hf_tmp->hh.keylen == (unsigned)(keylen)) && \
           (memcmp(_hf_tmp->hh.key, findkey, keylen) == 0)) { \
@@ -78,7 +78,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define HASH_COUNT(head) \
     ({ unsigned _count = 0; \
-       typeof(head) _ctr; \
+       __typeof__(head) _ctr; \
        for (_ctr = (head); _ctr; _ctr = _ctr->hh.next) { _count++; } \
        _count; })
 
